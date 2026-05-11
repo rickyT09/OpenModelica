@@ -8501,6 +8501,7 @@ public function allPostOptimizationModules
     (BackendDAEOptimize.simplifyTimeIndepFuncCalls, "simplifyTimeIndepFuncCalls"),
     (BackendDAEOptimize.simplifyAllExpressions, "simplifyAllExpressions"),
     (BackendDAEOptimize.hets, "hets"),
+    (BackendDAEOptimize.fixupDifferentiatedDelayIndices, "fixupDifferentiatedDelayIndices"),
     (FindZeroCrossings.findZeroCrossings, "findZeroCrossings"),
     // TODO: move the following modules to the correct position
     (BackendDump.dumpComponentsGraphStr, "dumpComponentsGraphStr"),

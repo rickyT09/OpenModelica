@@ -6386,5 +6386,74 @@ algorithm
   comps := listReverse(newComps);
 end traverseStrongComponentsAddLambda;
 
+public function fixupDifferentiatedDelayIndices
+  "Fix delay expression indices that were set to -1 by Differentiate.mo.
+  When the compiler differentiates delay() calls (e.g., for CS FMU output
+  derivatives or other backend transformations), it emits
+  delay(-1, der(expr), dt, dtMax) with -1 as a placeholder index.
+  This pass assigns valid indices before FindZeroCrossings processes the
+  equations, ensuring consistent delay indices across equations and zero
+  crossings. See GitHub issue #15532."
+  input BackendDAE.BackendDAE inDAE;
+  output BackendDAE.BackendDAE outDAE = inDAE;
+protected
+  Integer maxIndex;
+  Boolean hasNegative;
+  tuple<Integer, Boolean> tpl;
+algorithm
+  // Pass 1: find maximum existing delay index and check for negatives
+  (_, tpl) := BackendDAEUtil.traverseBackendDAEExps(outDAE,
+    Expression.traverseSubexpressionsHelper,
+    (collectMaxDelayIndex, (-1, false)));
+  (maxIndex, hasNegative) := tpl;
+
+  if not hasNegative then
+    return;
+  end if;
+
+  // Pass 2: fix -1 indices starting from maxIndex + 1
+  // Must use WithUpdate variant so modified expressions are written back
+  _ := BackendDAEUtil.traverseBackendDAEExpsNoCopyWithUpdate(outDAE,
+    Expression.traverseSubexpressionsHelper,
+    (fixNegativeDelayIndex, maxIndex + 1));
+end fixupDifferentiatedDelayIndices;
+
+protected function collectMaxDelayIndex
+  "Collect the maximum delay expression index and detect negative indices."
+  input DAE.Exp e;
+  input tuple<Integer, Boolean> acc;
+  output DAE.Exp outExp = e;
+  output tuple<Integer, Boolean> outAcc;
+algorithm
+  outAcc := match e
+    local
+      Integer i, curMax;
+      Boolean hasNeg;
+    case DAE.CALL(path = Absyn.IDENT("delay"), expLst = DAE.ICONST(i)::_)
+      algorithm
+        (curMax, hasNeg) := acc;
+      then
+        (intMax(i, curMax), hasNeg or i < 0);
+    else acc;
+  end match;
+end collectMaxDelayIndex;
+
+protected function fixNegativeDelayIndex
+  "Replace negative delay indices with fresh valid indices."
+  input DAE.Exp e;
+  input Integer nextIndex;
+  output DAE.Exp outExp;
+  output Integer outNextIndex;
+algorithm
+  (outExp, outNextIndex) := match e
+    local
+      Integer i;
+      list<DAE.Exp> rest;
+    case DAE.CALL(path = Absyn.IDENT("delay"), expLst = DAE.ICONST(i)::rest) guard(i < 0)
+    then (DAE.CALL(Absyn.IDENT("delay"), DAE.ICONST(nextIndex)::rest, e.attr), nextIndex + 1);
+    else (e, nextIndex);
+  end match;
+end fixNegativeDelayIndex;
+
 annotation(__OpenModelica_Interface="backend");
 end BackendDAEOptimize;
