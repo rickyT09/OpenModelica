@@ -1,0 +1,53 @@
+// name:     DelayDerCSFMU
+// keywords: delay derivative cosimulation fmu
+// status: correct
+// teardown_command: rm -rf DelayDer.fmu DelayDer_fmu DelayDer_* ndelay.txt neg_indices.txt
+//
+// Regression test for GitHub issue #15532:
+// delay() on CS FMU output gets exprNumber = -1 when compiler
+// differentiates for output derivatives.
+//
+// When exporting a co-simulation FMU where delay() feeds a RealOutput,
+// the compiler differentiates delay(x, dt) to delay(der(x), dt) for
+// output derivative computation. The differentiated delay must receive
+// a valid ring buffer index (not -1).
+
+loadString("
+model DelayDer
+  output Real y;
+  Real x(start = 1);
+equation
+  der(x) = -x;
+  y = delay(x, 0.003, 0.003);
+end DelayDer;
+"); getErrorString();
+
+buildModelFMU(DelayDer, version="2.0", fmuType="cs"); getErrorString();
+
+// Extract FMU sources
+system("unzip -oqq DelayDer.fmu -d DelayDer_fmu"); getErrorString();
+
+// Verify NDELAY_EXPRESSIONS = 2 (original delay + differentiated delay)
+system("grep 'OMC_NDELAY_EXPRESSIONS' DelayDer_fmu/sources/omc_simulation_settings.h > ndelay.txt"); getErrorString();
+readFile("ndelay.txt"); getErrorString();
+
+// Verify no negative delay indices in generated C code.
+// grep -q returns 0 if found, 1 if not found.
+// After fix: no -1 indices should exist, so grep returns 1.
+system("grep -rq 'threadData, -1,' DelayDer_fmu/sources/ 2>/dev/null"); getErrorString();
+
+// Result:
+// true
+// ""
+// "DelayDer.fmu"
+// "Warning: The initial conditions are not fully specified. For more information set -d=initialization. In OMEdit Tools->Options->Simulation->Show additional information from the initialization process, in OMNotebook call setCommandLineOptions(\"-d=initialization\").
+// "
+// 0
+// ""
+// 0
+// ""
+// "#define OMC_NDELAY_EXPRESSIONS 2
+// "
+// ""
+// 1
+// ""
